@@ -19,8 +19,8 @@ while ($true) {
             $targetFileObject = Get-ChildItem -Path $gameDir -Filter $fileNamePattern
             if ($null -eq $targetFileObject -or $targetFileObject.Count -gt 1) {
                 Write-Host "ERROR: Could not find a unique target file. Check previous error messages. Skipping..." -ForegroundColor Red
-                Start-Sleep -Seconds 10 # Wait before next check
-                continue # Skip to the next iteration of the while loop
+                Start-Sleep -Seconds 10
+                continue
             }
             $fileName = $targetFileObject.Name
             Write-Host "Found target asset file: $fileName" -ForegroundColor Green
@@ -33,7 +33,7 @@ while ($true) {
             if (-not (Test-Path $sourceFile)) {
                 Write-Host "ERROR: Game wants to replace '$fileName', but this file was not found in the script's directory." -ForegroundColor Red
                 Write-Host "Please add the file and the script will try again on the next game launch."
-                $handledProcessId = $gameProcess.Id # Mark as handled to prevent spamming this error
+                $handledProcessId = $gameProcess.Id
                 continue
             }
 
