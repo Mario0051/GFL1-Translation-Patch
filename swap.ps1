@@ -57,7 +57,7 @@ while ($true) {
             Write-Host ""
             Write-Host "ACTION REQUIRED: The mod is not currently active." -ForegroundColor Yellow
             
-            $backupFile = "$destinationFile.original.bak"
+            $backupFile = "$destinationFile.bak"
 
             if (-not (Test-Path $backupFile)) {
                 Write-Host "No backup found for '$($targetFileObject.Name)'. Creating one now..." -ForegroundColor Yellow
