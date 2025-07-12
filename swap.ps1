@@ -1,25 +1,21 @@
 $gameDir = "C:\Program Files (x86)\Steam\steamapps\common\GIRLS' FRONTLINE\GrilsFrontLine_Data\StreamingAssets\Res\Pc"
-$fileNamePattern = "*assettextavg.ab"
+$modFileName = "assettextavg.ab"
+$targetFilePattern = "*assettextavg.ab"
 $processName = "GrilsFrontLine"
-
 $scriptDir = $PSScriptRoot
 $modApplied = $false
 $handledProcessId = $null
-$waitingForFile = $false
-
 Write-Host "Script started. Now continuously monitoring for '$processName.exe'..." -ForegroundColor Cyan
-Write-Host "This version is designed to wait for temporary file locks to be released." -ForegroundColor Cyan
+Write-Host "This script will smartly copy '$modFileName' and rename it to match the game's file." -ForegroundColor Cyan
 Write-Host "------------------------------------------------------------------------------------"
-
-$sourceFileObject = Get-ChildItem -Path $scriptDir -Filter $fileNamePattern
-if ($null -eq $sourceFileObject) {
-    Write-Host "FATAL ERROR: The mod file ('$fileNamePattern') was not found in the script's directory." -ForegroundColor Red
+$sourceFilePath = Join-Path -Path $scriptDir -ChildPath $modFileName
+if (-not (Test-Path $sourceFilePath)) {
+    Write-Host "FATAL ERROR: The mod file ('$modFileName') was not found in this script's directory." -ForegroundColor Red
     Read-Host -Prompt "Press Enter to exit..."
     exit
 }
-$sourceFile = $sourceFileObject.FullName
-$modFileHash = (Get-FileHash $sourceFile).Hash
-
+$sourceFile = Get-Item $sourceFilePath
+$modFileHash = (Get-FileHash $sourceFile.FullName).Hash
 while ($true) {
     $gameProcess = Get-Process -Name $processName -ErrorAction SilentlyContinue
 
@@ -30,49 +26,42 @@ while ($true) {
             $handledProcessId = $gameProcess.Id
             $modApplied = $false
         }
-
-        $targetFileObject = Get-ChildItem -Path $gameDir -Filter $fileNamePattern
-        if ($null -eq $targetFileObject) {
+        $targetFileObjects = Get-ChildItem -Path $gameDir -Filter $targetFilePattern
+        if ($null -eq $targetFileObjects) {
             Write-Host -NoNewline "`rWaiting for game file to become accessible... "
-            $waitingForFile = $true
             Start-Sleep -Seconds 1
             continue
         }
-        
-        if ($waitingForFile) { Write-Host ""; $waitingForFile = $false; }
-        
-        $destinationFile = $targetFileObject.FullName
+        if ($targetFileObjects.Count -gt 1) {
+             Write-Host "WARNING: Found multiple possible game files. Using the first one: $($targetFileObjects[0].Name)" -ForegroundColor Yellow
+        }
+        $targetFile = $targetFileObjects[0]
+        $destinationFile = $targetFile.FullName
         $liveFileHash = (Get-FileHash -Path $destinationFile -ErrorAction SilentlyContinue).Hash
-        
         if ($null -eq $liveFileHash) {
             Write-Host -NoNewline "`rWaiting for game file lock to be released... "
-            $waitingForFile = $true
             Start-Sleep -Seconds 1
-            continue 
+            continue
         }
-
         if ($liveFileHash -ne $modFileHash) {
-            
             $modApplied = $false
             Write-Host ""
             Write-Host "ACTION REQUIRED: The mod is not currently active." -ForegroundColor Yellow
-            
-            $backupFile = "$destinationFile.bak"
 
+            $backupFile = "$destinationFile.bak"
             if (-not (Test-Path $backupFile)) {
-                Write-Host "No backup found for '$($targetFileObject.Name)'. Creating one now..." -ForegroundColor Yellow
+                Write-Host "No backup found for '$($targetFile.Name)'. Creating one now..." -ForegroundColor Yellow
                 Copy-Item -Path $destinationFile -Destination $backupFile -Force
-                Write-Host "Backup created." -ForegroundColor Green
+                Write-Host "Backup created: '$($backupFile)'" -ForegroundColor Green
             }
-            
+
             Write-Host "Restoring your original backup to ensure a clean login..."
             Copy-Item -Path $backupFile -Destination $destinationFile -Force
 
-            Read-Host -Prompt "Please fully log in to the game. AFTER you are logged in, press Enter here to apply the modded file..."
+            Read-Host -Prompt "Please fully log in to the game. AFTER you are logged in, press Enter here to apply the mod..."
+            Write-Host "Applying mod: Copying '$($sourceFile.Name)' and renaming it to '$($targetFile.Name)'..." -ForegroundColor Cyan
+            Copy-Item -Path $sourceFile.FullName -Destination $destinationFile -Force
 
-            Write-Host "Proceeding with file swap..."
-            Copy-Item -Path $sourceFile -Destination $destinationFile -Force
-            
             if (((Get-FileHash $destinationFile).Hash) -eq $modFileHash) {
                 Write-Host "Mod file applied successfully. Monitoring for changes..." -ForegroundColor Green
                 Write-Host "------------------------------------------------------------------------------------"
@@ -93,19 +82,18 @@ while ($true) {
         if ($handledProcessId -ne $null) {
             Write-Host ""
             Write-Host "Game process has closed." -ForegroundColor Yellow
-            
-            $targetFileObject = Get-ChildItem -Path $gameDir -Filter $fileNamePattern
+            $targetFileObject = Get-ChildItem -Path $gameDir -Filter $targetFilePattern -ErrorAction SilentlyContinue
             if ($null -ne $targetFileObject) {
                 $destinationFile = $targetFileObject.FullName
-                $backupFile = "$destinationFile.original.bak"
+                $backupFile = "$destinationFile.bak"
                 if(Test-Path $backupFile) {
                     Write-Host "Restoring original file from backup..."
-                    Copy-Item -Path $backupFile -Destination $destinationFile -Force
-                    Write-Host "Original file restored."
+                    Move-Item -Path $backupFile -Destination $destinationFile -Force
+                    Write-Host "Original file restored successfully."
                 }
             }
-            
-            Write-Host "Resetting and waiting for a new launch..."
+
+            Write-Host "Resetting and waiting for a new game launch..."
             Write-Host "------------------------------------------------------------------------------------"
             $handledProcessId = $null
             $modApplied = $false
