@@ -5,9 +5,11 @@ $processName = "GrilsFrontLine"
 $scriptDir = $PSScriptRoot
 $modApplied = $false
 $handledProcessId = $null
+
 Write-Host "Script started. Now continuously monitoring for '$processName.exe'..." -ForegroundColor Cyan
 Write-Host "This script will smartly copy '$modFileName' and rename it to match the game's file." -ForegroundColor Cyan
 Write-Host "------------------------------------------------------------------------------------"
+
 $sourceFilePath = Join-Path -Path $scriptDir -ChildPath $modFileName
 if (-not (Test-Path $sourceFilePath)) {
     Write-Host "FATAL ERROR: The mod file ('$modFileName') was not found in this script's directory." -ForegroundColor Red
@@ -16,6 +18,7 @@ if (-not (Test-Path $sourceFilePath)) {
 }
 $sourceFile = Get-Item $sourceFilePath
 $modFileHash = (Get-FileHash $sourceFile.FullName).Hash
+
 while ($true) {
     $gameProcess = Get-Process -Name $processName -ErrorAction SilentlyContinue
 
@@ -26,29 +29,45 @@ while ($true) {
             $handledProcessId = $gameProcess.Id
             $modApplied = $false
         }
+
         $targetFileObjects = Get-ChildItem -Path $gameDir -Filter $targetFilePattern
         if ($null -eq $targetFileObjects) {
             Write-Host -NoNewline "`rWaiting for game file to become accessible... "
             Start-Sleep -Seconds 1
             continue
         }
+
         if ($targetFileObjects.Count -gt 1) {
-             Write-Host "WARNING: Found multiple possible game files. Using the first one: $($targetFileObjects[0].Name)" -ForegroundColor Yellow
+             Write-Host "WARNING: Found multiple possible game files. Using the newest one." -ForegroundColor Yellow
+             $targetFile = $targetFileObjects | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        } else {
+             $targetFile = $targetFileObjects
         }
-        $targetFile = $targetFileObjects[0]
+
         $destinationFile = $targetFile.FullName
         $liveFileHash = (Get-FileHash -Path $destinationFile -ErrorAction SilentlyContinue).Hash
+
         if ($null -eq $liveFileHash) {
             Write-Host -NoNewline "`rWaiting for game file lock to be released... "
             Start-Sleep -Seconds 1
             continue
         }
+
         if ($liveFileHash -ne $modFileHash) {
             $modApplied = $false
             Write-Host ""
-            Write-Host "ACTION REQUIRED: The mod is not currently active." -ForegroundColor Yellow
+            Write-Host "ACTION REQUIRED: The mod is not currently active for file '$($targetFile.Name)'." -ForegroundColor Yellow
 
             $backupFile = "$destinationFile.bak"
+
+            $allBackups = Get-ChildItem -Path $gameDir -Filter "$targetFilePattern.bak" -ErrorAction SilentlyContinue
+            foreach ($oldBackup in $allBackups) {
+                if ($oldBackup.FullName -ne $backupFile) {
+                    Write-Host "Removing obsolete backup: $($oldBackup.Name)" -ForegroundColor Magenta
+                    Remove-Item -Path $oldBackup.FullName -Force
+                }
+            }
+
             if (-not (Test-Path $backupFile)) {
                 Write-Host "No backup found for '$($targetFile.Name)'. Creating one now..." -ForegroundColor Yellow
                 Copy-Item -Path $destinationFile -Destination $backupFile -Force
@@ -84,10 +103,12 @@ while ($true) {
             Write-Host "Game process has closed." -ForegroundColor Yellow
             $targetFileObject = Get-ChildItem -Path $gameDir -Filter $targetFilePattern -ErrorAction SilentlyContinue
             if ($null -ne $targetFileObject) {
-                $destinationFile = $targetFileObject.FullName
+
+                $targetFile = $targetFileObject | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                $destinationFile = $targetFile.FullName
                 $backupFile = "$destinationFile.bak"
                 if(Test-Path $backupFile) {
-                    Write-Host "Restoring original file from backup..."
+                    Write-Host "Restoring original file '$($targetFile.Name)' from backup..."
                     Move-Item -Path $backupFile -Destination $destinationFile -Force
                     Write-Host "Original file restored successfully."
                 }
